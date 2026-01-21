@@ -1,0 +1,423 @@
+openapi: 3.1.0
+info:
+  title: IP Geolocation API
+  description: |
+    A RESTful API service for retrieving geolocation information based on IP addresses.
+    
+    This API provides detailed location data including country, region, city, coordinates,
+    timezone, and ISP information for any valid IPv4 or IPv6 address.
+    
+    **Features:**
+    - Single IP address lookup
+    - Batch IP address lookup (multiple IPs at once)
+    - Comprehensive error handling
+    - Rate limiting support
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns the health status of the API service
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                timestamp: "2024-01-15T10:30:00Z"
+
+  /ip/{ip_address}:
+    get:
+      summary: Get geolocation for a single IP address
+      description: |
+        Retrieves geolocation information for a single IP address.
+        
+        Supports both IPv4 and IPv6 addresses. Returns detailed location data
+        including country, region, city, coordinates, timezone, and ISP information.
+      operationId: getIpGeolocation
+      tags:
+        - Geolocation
+      parameters:
+        - name: ip_address
+          in: path
+          required: true
+          description: The IP address to look up (IPv4 or IPv6)
+          schema:
+            type: string
+            format: ipv4-or-ipv6
+          examples:
+            ipv4:
+              value: "8.8.8.8"
+              summary: IPv4 example
+            ipv6:
+              value: "2001:4860:4860::8888"
+              summary: IPv6 example
+      responses:
+        '200':
+          description: Successful response with geolocation data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IpGeolocationResponse'
+              examples:
+                success:
+                  summary: Successful lookup
+                  value:
+                    ip: "8.8.8.8"
+                    country: "United States"
+                    country_code: "US"
+                    region: "California"
+                    region_code: "CA"
+                    city: "Mountain View"
+                    postal_code: "94043"
+                    latitude: 37.4056
+                    longitude: -122.0775
+                    timezone: "America/Los_Angeles"
+                    isp: "Google LLC"
+                    org: "Google Public DNS"
+                    asn: "AS15169"
+                    query_timestamp: "2024-01-15T10:30:00Z"
+        '400':
+          description: Invalid IP address format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Invalid IP address format"
+                detail: "The provided IP address 'invalid-ip' is not a valid IPv4 or IPv6 address"
+                status_code: 400
+        '404':
+          description: IP address not found or no geolocation data available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "IP address not found"
+                detail: "No geolocation data available for IP address 192.168.1.1"
+                status_code: 404
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Rate limit exceeded"
+                detail: "Too many requests. Please try again later."
+                status_code: 429
+        '500':
+          description: Internal server error or external API failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Internal server error"
+                detail: "Failed to retrieve geolocation data from external service"
+                status_code: 500
+        '503':
+          description: Service unavailable (external API timeout or unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Service unavailable"
+                detail: "The geolocation service is temporarily unavailable. Please try again later."
+                status_code: 503
+
+  /ip/batch:
+    post:
+      summary: Get geolocation for multiple IP addresses
+      description: |
+        Retrieves geolocation information for multiple IP addresses in a single request.
+        
+        Supports up to 100 IP addresses per request. Returns an array of results,
+        with individual errors for any invalid or unfound IP addresses.
+      operationId: getBatchIpGeolocation
+      tags:
+        - Geolocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchIpRequest'
+            examples:
+              multiple_ips:
+                summary: Multiple IP addresses
+                value:
+                  ip_addresses:
+                    - "8.8.8.8"
+                    - "1.1.1.1"
+                    - "208.67.222.222"
+      responses:
+        '200':
+          description: Successful response with geolocation data for all IPs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchIpGeolocationResponse'
+              example:
+                results:
+                  - ip: "8.8.8.8"
+                    country: "United States"
+                    country_code: "US"
+                    region: "California"
+                    region_code: "CA"
+                    city: "Mountain View"
+                    postal_code: "94043"
+                    latitude: 37.4056
+                    longitude: -122.0775
+                    timezone: "America/Los_Angeles"
+                    isp: "Google LLC"
+                    org: "Google Public DNS"
+                    asn: "AS15169"
+                    query_timestamp: "2024-01-15T10:30:00Z"
+                  - ip: "1.1.1.1"
+                    country: "Australia"
+                    country_code: "AU"
+                    region: "New South Wales"
+                    region_code: "NSW"
+                    city: "Sydney"
+                    postal_code: "2000"
+                    latitude: -33.8688
+                    longitude: 151.2093
+                    timezone: "Australia/Sydney"
+                    isp: "Cloudflare, Inc."
+                    org: "APNIC and Cloudflare DNS Resolver project"
+                    asn: "AS13335"
+                    query_timestamp: "2024-01-15T10:30:00Z"
+                errors:
+                  - ip: "192.168.1.1"
+                    error: "IP address not found"
+                    detail: "No geolocation data available for private IP address"
+        '400':
+          description: Invalid request (e.g., too many IPs, invalid format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Invalid request"
+                detail: "Maximum 100 IP addresses allowed per batch request"
+                status_code: 400
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          description: Health status of the service
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp in ISO 8601 format
+          example: "2024-01-15T10:30:00Z"
+
+    IpGeolocationResponse:
+      type: object
+      required:
+        - ip
+        - country
+        - country_code
+        - query_timestamp
+      properties:
+        ip:
+          type: string
+          format: ipv4-or-ipv6
+          description: The queried IP address
+          example: "8.8.8.8"
+        country:
+          type: string
+          description: Full country name
+          example: "United States"
+        country_code:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          minLength: 2
+          maxLength: 2
+          example: "US"
+        region:
+          type: string
+          nullable: true
+          description: Region or state name
+          example: "California"
+        region_code:
+          type: string
+          nullable: true
+          description: Region or state code
+          example: "CA"
+        city:
+          type: string
+          nullable: true
+          description: City name
+          example: "Mountain View"
+        postal_code:
+          type: string
+          nullable: true
+          description: Postal or ZIP code
+          example: "94043"
+        latitude:
+          type: number
+          format: float
+          nullable: true
+          description: Latitude coordinate
+          minimum: -90
+          maximum: 90
+          example: 37.4056
+        longitude:
+          type: number
+          format: float
+          nullable: true
+          description: Longitude coordinate
+          minimum: -180
+          maximum: 180
+          example: -122.0775
+        timezone:
+          type: string
+          nullable: true
+          description: IANA timezone identifier
+          example: "America/Los_Angeles"
+        isp:
+          type: string
+          nullable: true
+          description: Internet Service Provider name
+          example: "Google LLC"
+        org:
+          type: string
+          nullable: true
+          description: Organization name
+          example: "Google Public DNS"
+        asn:
+          type: string
+          nullable: true
+          description: Autonomous System Number
+          example: "AS15169"
+        query_timestamp:
+          type: string
+          format: date-time
+          description: Timestamp when the query was made (ISO 8601 format)
+          example: "2024-01-15T10:30:00Z"
+
+    BatchIpRequest:
+      type: object
+      required:
+        - ip_addresses
+      properties:
+        ip_addresses:
+          type: array
+          items:
+            type: string
+            format: ipv4-or-ipv6
+          minItems: 1
+          maxItems: 100
+          description: Array of IP addresses to look up (1-100 addresses)
+          example: ["8.8.8.8", "1.1.1.1"]
+
+    BatchIpResult:
+      allOf:
+        - $ref: '#/components/schemas/IpGeolocationResponse'
+        - type: object
+          properties:
+            error:
+              type: string
+              nullable: true
+              description: Error message if lookup failed for this IP
+            detail:
+              type: string
+              nullable: true
+              description: Detailed error information
+
+    BatchIpGeolocationResponse:
+      type: object
+      required:
+        - results
+        - errors
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/IpGeolocationResponse'
+          description: Array of successful geolocation lookups
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - ip
+              - error
+            properties:
+              ip:
+                type: string
+                description: The IP address that failed
+                example: "192.168.1.1"
+              error:
+                type: string
+                description: Error type
+                example: "IP address not found"
+              detail:
+                type: string
+                nullable: true
+                description: Detailed error message
+                example: "No geolocation data available for private IP address"
+          description: Array of failed lookups with error details
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - status_code
+      properties:
+        error:
+          type: string
+          description: Error type or message
+          example: "Invalid IP address format"
+        detail:
+          type: string
+          nullable: true
+          description: Detailed error message
+          example: "The provided IP address 'invalid-ip' is not a valid IPv4 or IPv6 address"
+        status_code:
+          type: integer
+          description: HTTP status code
+          example: 400
+
+  securitySchemes: {}
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Geolocation
+    description: IP geolocation lookup endpoints
