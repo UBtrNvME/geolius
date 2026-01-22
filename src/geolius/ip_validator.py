@@ -1,4 +1,5 @@
 from pydantic import IPvAnyAddress
+
 from geolius.models import IpRequestInternal
 
 

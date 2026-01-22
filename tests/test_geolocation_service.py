@@ -8,6 +8,7 @@ import pytest
 
 from geolius.exceptions import ExternalApiError, IpAddressNotFoundError
 from geolius.geolocation_service import GeolocationService
+from geolius.ip_validator import validate_ip_address
 from geolius.models import IpGeolocationResponse
 
 
@@ -40,12 +41,21 @@ class TestGeolocationService:
     def _create_mock_city_response(self) -> Mock:
         """Create a mock MaxMind City response."""
         mock_response = Mock()
+        # Country
         mock_response.country.name = "United States"
         mock_response.country.iso_code = "US"
-        mock_response.subdivisions.most_specific.name = "California"
-        mock_response.subdivisions.most_specific.iso_code = "CA"
+        # Subdivisions
+        mock_subdivision = Mock()
+        mock_subdivision.name = "California"
+        mock_subdivision.iso_code = "CA"
+        mock_subdivisions = Mock()
+        mock_subdivisions.most_specific = mock_subdivision
+        mock_response.subdivisions = mock_subdivisions
+        # City
         mock_response.city.name = "Mountain View"
+        # Postal
         mock_response.postal.code = "94043"
+        # Location
         mock_response.location.latitude = 37.4056
         mock_response.location.longitude = -122.0775
         mock_response.location.time_zone = "America/Los_Angeles"
@@ -70,10 +80,11 @@ class TestGeolocationService:
             mock_reader.city.return_value = mock_city_response
             mock_reader_class.return_value = mock_reader
 
+            # Initialize service with mocked readers
             service._city_reader = mock_reader
             service._asn_reader = None  # No ASN data for this test
 
-            result = await service.get_geolocation("8.8.8.8")
+            result = await service.get_geolocation(validate_ip_address("8.8.8.8"))
 
             assert isinstance(result, IpGeolocationResponse)
             assert str(result.ip) == "8.8.8.8"
@@ -89,7 +100,10 @@ class TestGeolocationService:
 
     @pytest.mark.asyncio
     async def test_get_geolocation_with_asn(
-        self, service: GeolocationService, mock_city_db_path: Path, mock_asn_db_path: Path
+        self,
+        service: GeolocationService,
+        mock_city_db_path: Path,
+        mock_asn_db_path: Path,
     ) -> None:
         """Test geolocation lookup with ASN data."""
         mock_city_response = self._create_mock_city_response()
@@ -102,10 +116,11 @@ class TestGeolocationService:
             mock_asn_reader.asn.return_value = mock_asn_response
             mock_reader_class.return_value = mock_city_reader
 
+            # Initialize service with mocked readers
             service._city_reader = mock_city_reader
             service._asn_reader = mock_asn_reader
 
-            result = await service.get_geolocation("8.8.8.8")
+            result = await service.get_geolocation(validate_ip_address("8.8.8.8"))
 
             assert result.asn == "AS15169"
             assert result.org == "Google LLC"
@@ -115,26 +130,28 @@ class TestGeolocationService:
         self, service: GeolocationService, mock_city_db_path: Path
     ) -> None:
         """Test geolocation lookup when IP not found."""
+
         with patch("geoip2.database.Reader") as mock_reader_class:
             mock_reader = Mock()
-            mock_reader.city.side_effect = geoip2.errors.AddressNotFoundError("Not found")
+            mock_reader.city.side_effect = geoip2.errors.AddressNotFoundError(
+                "Not found"
+            )
             mock_reader_class.return_value = mock_reader
 
+            # Initialize service with mocked reader
             service._city_reader = mock_reader
+            service._asn_reader = None
 
             with pytest.raises(IpAddressNotFoundError):
-                await service.get_geolocation("192.168.1.1")
+                await service.get_geolocation(validate_ip_address("192.168.1.1"))
 
-    @pytest.mark.asyncio
-    async def test_get_geolocation_database_not_found(
-        self, tmp_path: Path
-    ) -> None:
-        """Test error when database file doesn't exist."""
+    def test_initialize_database_not_found(self, tmp_path: Path) -> None:
+        """Test error when database file doesn't exist during initialization."""
         non_existent_db = tmp_path / "nonexistent.mmdb"
         service = GeolocationService(city_db_path=non_existent_db)
 
         with pytest.raises(ExternalApiError) as exc_info:
-            await service.get_geolocation("8.8.8.8")
+            service.initialize()
         assert exc_info.value.status_code == 503
         assert "not found" in str(exc_info.value).lower()
 
@@ -148,73 +165,27 @@ class TestGeolocationService:
             mock_reader.city.side_effect = Exception("Database error")
             mock_reader_class.return_value = mock_reader
 
+            # Initialize service with mocked reader
             service._city_reader = mock_reader
+            service._asn_reader = None
 
             with pytest.raises(ExternalApiError) as exc_info:
-                await service.get_geolocation("8.8.8.8")
+                await service.get_geolocation(validate_ip_address("8.8.8.8"))
             assert exc_info.value.status_code == 500
-
-    @pytest.mark.asyncio
-    async def test_get_batch_geolocation(
-        self, service: GeolocationService, mock_city_db_path: Path
-    ) -> None:
-        """Test batch geolocation lookup."""
-        mock_city_response = self._create_mock_city_response()
-
-        with patch("geoip2.database.Reader") as mock_reader_class:
-            mock_reader = Mock()
-            mock_reader.city.return_value = mock_city_response
-            mock_reader_class.return_value = mock_reader
-
-            service._city_reader = mock_reader
-            service._asn_reader = None
-
-            results, errors = await service.get_batch_geolocation(["8.8.8.8", "1.1.1.1"])
-
-            assert len(results) == 2
-            assert len(errors) == 0
-            assert all(isinstance(r, IpGeolocationResponse) for r in results)
-
-    @pytest.mark.asyncio
-    async def test_get_batch_geolocation_with_errors(
-        self, service: GeolocationService, mock_city_db_path: Path
-    ) -> None:
-        """Test batch geolocation with some errors."""
-        mock_city_response = self._create_mock_city_response()
-
-        def mock_city_side_effect(ip: str) -> Mock:
-            if ip == "8.8.8.8":
-                return mock_city_response
-            else:
-                raise geoip2.errors.AddressNotFoundError("Not found")
-
-        with patch("geoip2.database.Reader") as mock_reader_class:
-            mock_reader = Mock()
-            mock_reader.city.side_effect = mock_city_side_effect
-            mock_reader_class.return_value = mock_reader
-
-            service._city_reader = mock_reader
-            service._asn_reader = None
-
-            results, errors = await service.get_batch_geolocation(["8.8.8.8", "192.168.1.1"])
-
-            assert len(results) == 1
-            assert len(errors) == 1
-            assert errors[0]["ip"] == "192.168.1.1"
-            assert errors[0]["error"] == "IP address not found"
 
     @pytest.mark.asyncio
     async def test_context_manager(self, mock_city_db_path: Path) -> None:
         """Test service as async context manager."""
         service = GeolocationService(city_db_path=mock_city_db_path)
-        service._city_reader = Mock()
+        mock_city_reader = Mock()
+        service._city_reader = mock_city_reader
         service._asn_reader = None
 
         async with service:
             assert service._city_reader is not None
 
         # Reader should be closed after context exit
-        service._city_reader.close.assert_called_once()
+        mock_city_reader.close.assert_called_once()
 
     def test_close(self, service: GeolocationService) -> None:
         """Test closing database readers."""

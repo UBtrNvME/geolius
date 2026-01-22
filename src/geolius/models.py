@@ -67,24 +67,6 @@ class IpGeolocationResponse(BaseModel):
     }
 
 
-class BatchIpRequest(BaseModel):
-    """Batch IP geolocation request model."""
-
-    ip_addresses: list[IPvAnyAddress] = Field(
-        ...,
-        description="Array of IP addresses to look up",
-        min_length=1,
-        max_length=100,
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "ip_addresses": ["8.8.8.8", "1.1.1.1"],
-            }
-        }
-    }
-
 class IpRequestInternal(BaseModel):
     """IP geolocation request model."""
 
@@ -93,70 +75,13 @@ class IpRequestInternal(BaseModel):
         description="The IP address to look up",
     )
 
-class BatchIpError(BaseModel):
-    """Error model for batch IP geolocation failures."""
 
-    ip: str = Field(..., description="The IP address that failed")
-    error: str = Field(..., description="Error type")
-    detail: str | None = Field(None, description="Detailed error message")
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "ip": "192.168.1.1",
-                "error": "IP address not found",
-                "detail": "No geolocation data available for private IP address",
-            }
-        }
-    }
-
-
-class BatchIpGeolocationResponse(BaseModel):
-    """Batch IP geolocation response model."""
-
-    results: list[IpGeolocationResponse] = Field(
-        ..., description="Array of successful geolocation lookups"
-    )
-    errors: list[BatchIpError] = Field(
-        ..., description="Array of failed lookups with error details"
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "results": [
-                    {
-                        "ip": "8.8.8.8",
-                        "country": "United States",
-                        "country_code": "US",
-                        "query_timestamp": "2024-01-15T10:30:00Z",
-                    }
-                ],
-                "errors": [
-                    {
-                        "ip": "192.168.1.1",
-                        "error": "IP address not found",
-                        "detail": "No geolocation data available for private IP address",
-                    }
-                ],
-            }
-        }
-    }
+class ErrorDetail(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
 
 
 class ErrorResponse(BaseModel):
-    """Error response model."""
-
-    error: str = Field(..., description="Error type or message")
-    detail: str | None = Field(None, description="Detailed error message")
-    status_code: int = Field(..., description="HTTP status code")
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "error": "Invalid IP address format",
-                "detail": "The provided IP address 'invalid-ip' is not a valid IPv4 or IPv6 address",
-                "status_code": 400,
-            }
-        }
-    }
+    message: str
+    details: list[ErrorDetail]

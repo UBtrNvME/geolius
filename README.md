@@ -4,8 +4,8 @@ A RESTful API service for retrieving geolocation information based on IP address
 
 ## Features
 
-- **Single IP Lookup**: Get geolocation data for a single IP address
-- **Batch IP Lookup**: Query multiple IP addresses (up to 100) in a single request
+- **My IP Lookup**: Automatically detect and get geolocation data for the requester's IP address
+- **Single IP Lookup**: Get geolocation data for a specific IP address
 - **Comprehensive Error Handling**: Proper HTTP status codes and error messages
 - **OpenAPI Specification**: Fully documented API with interactive documentation
 - **Type Safety**: Full type hints and Pydantic validation
@@ -108,12 +108,12 @@ PORT=8000
 
 Start the development server:
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn geolius.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Or using uv:
 ```bash
-uv run uvicorn app.main:app --reload
+uv run uvicorn geolius.main:app --reload
 ```
 
 The API will be available at `http://localhost:8000`
@@ -122,7 +122,7 @@ The API will be available at `http://localhost:8000`
 
 For production, use a production ASGI server like Gunicorn with Uvicorn workers:
 ```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+gunicorn geolius.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
 ## API Documentation
@@ -151,13 +151,51 @@ Returns the health status of the API service.
 }
 ```
 
+### My IP Geolocation
+
+```http
+GET /ip
+```
+
+Get geolocation data for the requester's IP address. The API automatically detects the client's IP address, including when behind proxies or load balancers.
+
+**Example:**
+```bash
+curl http://localhost:8000/ip
+```
+
+**Response:**
+```json
+{
+  "ip": "203.0.113.1",
+  "country": "United States",
+  "country_code": "US",
+  "region": "California",
+  "region_code": "CA",
+  "city": "San Francisco",
+  "postal_code": "94102",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "timezone": "America/Los_Angeles",
+  "isp": "Example ISP",
+  "org": "Example Organization",
+  "asn": "AS12345",
+  "query_timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Note:** The API automatically detects your IP address by checking:
+- `X-Forwarded-For` header (for proxied requests)
+- `X-Real-IP` header
+- Direct client connection IP
+
 ### Single IP Geolocation
 
 ```http
 GET /ip/{ip_address}
 ```
 
-Get geolocation data for a single IP address.
+Get geolocation data for a specific IP address.
 
 **Example:**
 ```bash
@@ -184,53 +222,12 @@ curl http://localhost:8000/ip/8.8.8.8
 }
 ```
 
-### Batch IP Geolocation
-
-```http
-POST /ip/batch
-Content-Type: application/json
-
-{
-  "ip_addresses": ["8.8.8.8", "1.1.1.1", "208.67.222.222"]
-}
-```
-
-Get geolocation data for multiple IP addresses (up to 100).
-
-**Example:**
-```bash
-curl -X POST http://localhost:8000/ip/batch \
-  -H "Content-Type: application/json" \
-  -d '{"ip_addresses": ["8.8.8.8", "1.1.1.1"]}'
-```
-
-**Response:**
-```json
-{
-  "results": [
-    {
-      "ip": "8.8.8.8",
-      "country": "United States",
-      "country_code": "US",
-      ...
-    }
-  ],
-  "errors": [
-    {
-      "ip": "192.168.1.1",
-      "error": "IP address not found",
-      "detail": "No geolocation data available for private IP address"
-    }
-  ]
-}
-```
-
 ## Error Handling
 
 The API uses standard HTTP status codes:
 
 - **200 OK**: Successful request
-- **400 Bad Request**: Invalid IP address format
+- **422 Unprocessable Entity**: Validation error (invalid IP address format)
 - **404 Not Found**: IP address not found or no geolocation data available
 - **500 Internal Server Error**: Internal server error
 - **503 Service Unavailable**: Database unavailable or not found
@@ -323,7 +320,7 @@ geolius/
 ## API Design Decisions
 
 1. **RESTful Design**: Follows REST principles with clear resource naming (`/ip/{ip_address}`)
-2. **Batch Endpoint**: Separate POST endpoint for batch operations to handle multiple IPs efficiently
+2. **My IP Endpoint**: Simple `GET /ip` endpoint that automatically detects the requester's IP address
 3. **Error Handling**: Consistent error response format across all endpoints
 4. **Async Architecture**: Full async/await support for better performance with concurrent requests
 5. **Type Safety**: Comprehensive type hints and Pydantic validation for reliability

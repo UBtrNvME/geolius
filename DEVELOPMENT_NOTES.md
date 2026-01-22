@@ -7,7 +7,7 @@
 I started by carefully reading the requirements and understanding what needed to be built:
 
 1. **OpenAPI Specification**: Created a comprehensive OpenAPI 3.1.0 specification (`openapi.yaml`) that serves as the source of truth. This included:
-   - Three main endpoints: health check, single IP lookup, and batch IP lookup
+   - Three main endpoints: health check, my IP lookup, and single IP lookup
    - Detailed request/response models with examples
    - Proper error responses with status codes
    - Comprehensive descriptions and documentation
@@ -45,7 +45,7 @@ I started by carefully reading the requirements and understanding what needed to
    - MaxMind GeoLite2 database reader using geoip2
    - Proper error handling for database errors and missing IPs
    - Response parsing and transformation from MaxMind models to our internal models
-   - Batch processing with concurrent database queries using `asyncio.gather()` and thread pool executor
+   - Async database queries using thread pool executor to avoid blocking
    - Support for both City and ASN databases (ASN optional)
 
 3. **API Routes**: Implemented FastAPI routes with:
@@ -103,13 +103,13 @@ Approximately **3.5-4 hours** total:
 
 **Problem**: MaxMind's geoip2 library uses synchronous database reads, which could block the event loop.
 
-**Solution**: Used `asyncio.get_event_loop().run_in_executor()` to run database queries in a thread pool, keeping the async API while avoiding blocking. This allows concurrent batch processing without blocking the event loop.
+**Solution**: Used `asyncio.get_event_loop().run_in_executor()` to run database queries in a thread pool, keeping the async API while avoiding blocking. This allows async processing without blocking the event loop.
 
-### Challenge 2: Batch Processing with Error Handling
+### Challenge 2: Client IP Detection
 
-**Problem**: When processing multiple IPs, some might fail while others succeed. Needed to handle partial failures gracefully.
+**Problem**: Need to reliably detect the client's IP address, especially when behind proxies or load balancers.
 
-**Solution**: Created `_get_geolocation_with_error_handling()` method that catches exceptions and returns error tuples instead of raising. This allows batch processing to continue even when individual database queries fail, collecting both successes and errors.
+**Solution**: Created `get_client_ip()` helper function that checks multiple headers (`X-Forwarded-For`, `X-Real-IP`) and falls back to direct client connection, ensuring accurate IP detection in various deployment scenarios.
 
 ### Challenge 3: OpenAPI Spec vs FastAPI Implementation
 
@@ -149,19 +149,19 @@ Approximately **3.5-4 hours** total:
 **Decision**: Used RESTful conventions with clear resource naming.
 
 **Rationale**: 
-- `/ip/{ip_address}` for single lookups follows REST principles
-- `/ip/batch` for batch operations uses POST (appropriate for multiple resources)
+- `/ip` for requester's IP lookup (simple GET request)
+- `/ip/{ip_address}` for specific IP lookups follows REST principles
 - Clear, intuitive URL structure
 
-### 2. Separate Batch Endpoint
+### 2. My IP Endpoint
 
-**Decision**: Created a separate POST endpoint for batch operations rather than using query parameters.
+**Decision**: Created a simple `GET /ip` endpoint that automatically detects the requester's IP address.
 
 **Rationale**:
-- POST allows sending a request body with multiple IPs
-- Better for handling large numbers of IPs (up to 100)
-- Cleaner API design than query parameters
-- Easier to validate and process
+- Simple and intuitive - no need to specify IP address
+- Automatically handles proxy headers (X-Forwarded-For, X-Real-IP)
+- Common pattern in IP geolocation APIs
+- Easy to use for end users
 
 ### 3. Error Response Format
 
@@ -178,7 +178,7 @@ Approximately **3.5-4 hours** total:
 
 **Rationale**:
 - Better performance for I/O-bound operations (HTTP requests)
-- Allows concurrent batch processing
+- Allows concurrent request handling
 - Modern Python best practice
 - FastAPI's strength is async support
 
@@ -315,7 +315,7 @@ To make this production-ready, I would implement the following (in priority orde
    - Connection pooling for HTTP client
    - Response compression
    - Database query optimization
-   - Async task queue for batch processing
+   - Caching frequently requested IPs
 
 ### 9. **Security Enhancements** (Medium Priority)
    - Input sanitization

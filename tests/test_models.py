@@ -5,9 +5,6 @@ from datetime import datetime
 import pytest
 
 from geolius.models import (
-    BatchIpError,
-    BatchIpGeolocationResponse,
-    BatchIpRequest,
     ErrorResponse,
     HealthResponse,
     IpGeolocationResponse,
@@ -29,13 +26,16 @@ class TestIpGeolocationResponse:
 
     def test_valid_response(self) -> None:
         """Test valid geolocation response."""
+        from geolius.ip_validator import validate_ip_address
+
         response = IpGeolocationResponse(
             ip="8.8.8.8",
             country="United States",
             country_code="US",
             query_timestamp=datetime.utcnow(),
         )
-        assert response.ip == "8.8.8.8"
+        assert response.ip == validate_ip_address("8.8.8.8")
+        assert str(response.ip) == "8.8.8.8"
         assert response.country == "United States"
         assert response.country_code == "US"
 
@@ -75,54 +75,23 @@ class TestIpGeolocationResponse:
             )
 
 
-class TestBatchIpRequest:
-    """Test BatchIpRequest model."""
-
-    def test_valid_request(self) -> None:
-        """Test valid batch request."""
-        request = BatchIpRequest(ip_addresses=["8.8.8.8", "1.1.1.1"])
-        assert len(request.ip_addresses) == 2
-
-    def test_empty_list(self) -> None:
-        """Test empty list validation."""
-        with pytest.raises(Exception):  # Pydantic validation error
-            BatchIpRequest(ip_addresses=[])
-
-    def test_too_many_ips(self) -> None:
-        """Test too many IPs validation."""
-        with pytest.raises(Exception):  # Pydantic validation error
-            BatchIpRequest(ip_addresses=[f"8.8.8.{i}" for i in range(101)])
-
-
-class TestBatchIpGeolocationResponse:
-    """Test BatchIpGeolocationResponse model."""
-
-    def test_valid_response(self) -> None:
-        """Test valid batch response."""
-        results = [
-            IpGeolocationResponse(
-                ip="8.8.8.8",
-                country="United States",
-                country_code="US",
-                query_timestamp=datetime.utcnow(),
-            )
-        ]
-        errors = [BatchIpError(ip="192.168.1.1", error="Not found")]
-
-        response = BatchIpGeolocationResponse(results=results, errors=errors)
-        assert len(response.results) == 1
-        assert len(response.errors) == 1
-
-
 class TestErrorResponse:
     """Test ErrorResponse model."""
 
     def test_valid_error_response(self) -> None:
         """Test valid error response."""
+        from geolius.models import ErrorDetail
+
         error = ErrorResponse(
-            error="Invalid IP address format",
-            detail="The IP address is invalid",
-            status_code=400,
+            message="Invalid IP address format",
+            details=[
+                ErrorDetail(
+                    loc=["path", "ip_address"],
+                    msg="The IP address is invalid",
+                    type="validation_error",
+                )
+            ],
         )
-        assert error.error == "Invalid IP address format"
-        assert error.status_code == 400
+        assert error.message == "Invalid IP address format"
+        assert len(error.details) == 1
+        assert error.details[0].msg == "The IP address is invalid"
